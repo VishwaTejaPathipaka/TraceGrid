@@ -1,7 +1,7 @@
 from socket import gaierror
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -175,14 +175,16 @@ def delete_endpoint(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    endpoint = db.query(APIEndpoint).filter(
+    endpoint = db.scalar(select(APIEndpoint).where(
         APIEndpoint.id == endpoint_id,
         APIEndpoint.user_id == current_user.id
-    ).first()
+    ).with_for_update())
 
     if endpoint is None:
         raise HTTPException(status_code=404, detail="Endpoint not found")
 
+    # Serialize deletion with probe writers, which lock the same endpoint before saving.
+    db.execute(delete(MonitoringHistory).where(MonitoringHistory.endpoint_id == endpoint_id))
     db.delete(endpoint)
     commit_endpoint_change(db, endpoint_id, current_user.id)
 

@@ -31,7 +31,7 @@ function Dashboard() {
       if (isActive()) setError(err.message)
     }
   }, [])
-  useMonitoringRefresh(load, undefined, 5000)
+  const refresh = useMonitoringRefresh(load, undefined, 5000)
   const loadIncidents = useCallback(async (isActive) => {
     try {
       const result = await getIncidentSummary(localStorage.getItem('access_token'))
@@ -53,7 +53,10 @@ function Dashboard() {
         <div><h1>Overview</h1><p>Availability and performance across your monitored APIs.</p></div>
         {data && <p className="refresh-time mono"><span className="refresh-dot" aria-hidden="true" />Refreshed {data.refreshedAt.toLocaleTimeString()}</p>}
       </header>
-      {error && <p className="notice notice-error" role="alert">{error}{data && ' Showing the last available results.'}</p>}
+      {error && <div className="notice notice-error">
+        <p role="alert">{error}{data && ' Showing the last available results.'}</p>
+        <button className="button small" onClick={refresh}>Try again</button>
+      </div>}
       {!data && !error && <p className="notice" role="status">Loading monitoring overview…</p>}
       {data && <>
         <section className="overview-grid" aria-label="Monitoring summary">
