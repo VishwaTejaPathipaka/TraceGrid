@@ -6,6 +6,20 @@
 # Local credentials and keys
 pgpass.conf
 .pgpass
+.aws/
+.ssh/
+.netrc
+_netrc
+.npmrc
+.pypirc
+.git-credentials
+credentials
+credentials.*
+secrets.json
+id_rsa
+id_dsa
+id_ecdsa
+id_ed25519
 *.pem
 *.key
 *.pfx
@@ -32,7 +46,10 @@ Thumbs.db
 
 # Local data and runtime output
 *.dump
+*.dump.*
 *.backup
+*.backup.*
+*.sql
 *.sql.gz
 *.db
 *.sqlite

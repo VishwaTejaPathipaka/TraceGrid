@@ -71,7 +71,13 @@ def test_batch_limit_stops_and_releases_leadership():
     assert cursor.execute.call_args.args[0] == "SELECT pg_advisory_unlock(%s)"
 
 
-def test_postgresql_retention_in_verified_synthetic_database():
+def test_postgresql_retention_in_verified_synthetic_database(request):
+    if os.environ.get("TRACEGRID_CI_POSTGRES_PORT") is not None or os.environ.get("GITHUB_ACTIONS") == "true":
+        engine = request.getfixturevalue("ci_postgres")
+        args, kwargs = engine.dialect.create_connect_args(engine.url)
+        assert_postgresql_retention(engine, lambda: psycopg2.connect(*args, **kwargs))
+        return
+
     name = os.environ.get("TRACEGRID_RETENTION_TEST_DATABASE")
     if not name:
         pytest.skip("Isolated PostgreSQL retention fixture was not started.")
@@ -82,71 +88,78 @@ def test_postgresql_retention_in_verified_synthetic_database():
         cursor.execute("""SELECT current_database(), inet_server_port(), shobj_description(oid,'pg_database')
                        FROM pg_database WHERE datname=current_database()""")
         assert cursor.fetchone() == (name, 55439, f"TraceGrid retention test {name.rsplit('_', 1)[-1]}")
-        cursor.execute("SELECT count(*) FROM monitoring_history")
-        assert cursor.fetchone() == (0,)
     engine = create_engine(URL.create("postgresql+psycopg2", username=role, host="127.0.0.1", port=55439, database=name),
                            hide_parameters=True)
     try:
-        now = datetime.now(timezone.utc)
-        with Session(engine) as db, db.begin():
-            owner = User(username="retention_fixture", email="retention-fixture@example.com", hashed_password="unused")
-            other = User(username="retention_other", email="retention-other@example.com", hashed_password="unused")
-            db.add_all([owner, other])
-            db.flush()
-            endpoint = APIEndpoint(user_id=owner.id, name="Retention fixture", url="https://example.invalid/", is_active=False)
-            private = APIEndpoint(user_id=other.id, name="Private fixture", url="https://example.invalid/", is_active=False)
-            db.add_all([endpoint, private])
-            db.flush()
-            owner_id, endpoint_id = owner.id, endpoint.id
-            incident = Incident(owner_id=owner_id, endpoint_id=endpoint_id, endpoint_name=endpoint.name,
-                                title="Fixture incident", status="open", severity="critical", failure_reason="http_error",
-                                started_at=now, detected_at=now)
-            db.add(incident)
-            db.flush()
-            db.add_all([IncidentNotification(incident_id=incident.id, kind="opened", created_at=now, available_at=now),
-                        RevokedToken(token="synthetic-maintenance-fixture"), RateLimitCounter(key="r"*64, expires_at=9, hits=1)])
-            old = []
-            for offset in (3, 2):
-                row = MonitoringHistory(endpoint_id=endpoint_id, checked_at=now - timedelta(days=offset),
-                                        status="UP", response_time=5)
-                db.add(row)
-                old.append(row)
-            db.add_all([MonitoringHistory(endpoint_id=endpoint_id, checked_at=now - timedelta(seconds=i),
-                                          status=status, response_time=latency)
-                        for i, status, latency in [(20, "UP", 20), (40, "DOWN", 60), (55, "ERROR", 800)]])
-            db.add(MonitoringHistory(endpoint_id=private.id, checked_at=now, status="UP", response_time=1))
-            db.flush()
-            oldest = old[0].id
-
-        plan = RetentionPlan(name, days=1, batch_size=1, apply=True, confirmation=name)
-        with closing(psycopg2.connect(**args)) as maintenance:
-            dry = run_retention(maintenance, RetentionPlan(name, days=1))
-            assert (dry["eligible"], dry["deleted"]) == (2, 0)
-            with closing(psycopg2.connect(**args)) as leader, leader, leader.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_lock(%s)", (RETENTION_LOCK,))
-                with pytest.raises(RetentionRefused, match="Another retention run"):
-                    run_retention(maintenance, plan, enabled=True)
-            with closing(psycopg2.connect(**args)) as locked, locked, locked.cursor() as cursor:
-                cursor.execute("SELECT id FROM monitoring_history WHERE id=%s FOR UPDATE", (oldest,))
-                def interrupt(_):
-                    raise KeyboardInterrupt
-                with pytest.raises(KeyboardInterrupt):
-                    run_retention(maintenance, plan, enabled=True, pause=interrupt)
-                assert run_retention(maintenance, RetentionPlan(name, days=1))["eligible"] == 1
-            resumed = run_retention(maintenance, plan, enabled=True, pause=lambda _: None)
-            assert resumed["deleted"] == resumed["batches"] == 1
-            assert run_retention(maintenance, RetentionPlan(name, days=1))["eligible"] == 0
-        with Session(engine) as db:
-            for model, count in [(User, 2), (APIEndpoint, 2), (Incident, 1), (IncidentNotification, 1),
-                                 (RevokedToken, 1), (RateLimitCounter, 1), (MonitoringHistory, 4)]:
-                assert db.scalar(select(func.count()).select_from(model)) == count
-            analytics = endpoint_report(db, db.get(APIEndpoint, endpoint_id), Window.from_range("7d"))
-            assert analytics["uptime"] == 50 and analytics["latency"]["average"] == 40
-            assert analytics["availability"]["monitoring_errors"] == 1
-            user = db.get(User, owner_id)
-            assert len(get_recent_activity(db, user)) == 3
-            dashboard = get_dashboard_summary(db, user)
-            assert dashboard["total_endpoints"] == 1 and dashboard["uptime_percentage"] == 50
-            assert dashboard["average_response_time"] == 40
+        assert_postgresql_retention(engine, lambda: psycopg2.connect(**args))
     finally:
         engine.dispose()
+
+
+def assert_postgresql_retention(engine, connect):
+    name = engine.url.database
+    with Session(engine) as db:
+        for model in (User, APIEndpoint, MonitoringHistory):
+            assert db.scalar(select(func.count()).select_from(model)) == 0
+
+    now = datetime.now(timezone.utc)
+    with Session(engine) as db, db.begin():
+        owner = User(username="retention_fixture", email="retention-fixture@example.com", hashed_password="unused")
+        other = User(username="retention_other", email="retention-other@example.com", hashed_password="unused")
+        db.add_all([owner, other])
+        db.flush()
+        endpoint = APIEndpoint(user_id=owner.id, name="Retention fixture", url="https://example.invalid/", is_active=False)
+        private = APIEndpoint(user_id=other.id, name="Private fixture", url="https://example.invalid/", is_active=False)
+        db.add_all([endpoint, private])
+        db.flush()
+        owner_id, endpoint_id = owner.id, endpoint.id
+        incident = Incident(owner_id=owner_id, endpoint_id=endpoint_id, endpoint_name=endpoint.name,
+                            title="Fixture incident", status="open", severity="critical", failure_reason="http_error",
+                            started_at=now, detected_at=now)
+        db.add(incident)
+        db.flush()
+        db.add_all([IncidentNotification(incident_id=incident.id, kind="opened", created_at=now, available_at=now),
+                    RevokedToken(token="synthetic-maintenance-fixture"), RateLimitCounter(key="r"*64, expires_at=9, hits=1)])
+        old = []
+        for offset in (3, 2):
+            row = MonitoringHistory(endpoint_id=endpoint_id, checked_at=now - timedelta(days=offset),
+                                    status="UP", response_time=5)
+            db.add(row)
+            old.append(row)
+        db.add_all([MonitoringHistory(endpoint_id=endpoint_id, checked_at=now - timedelta(seconds=i),
+                                      status=status, response_time=latency)
+                    for i, status, latency in [(20, "UP", 20), (40, "DOWN", 60), (55, "ERROR", 800)]])
+        db.add(MonitoringHistory(endpoint_id=private.id, checked_at=now, status="UP", response_time=1))
+        db.flush()
+        oldest = old[0].id
+
+    plan = RetentionPlan(name, days=1, batch_size=1, apply=True, confirmation=name)
+    with closing(connect()) as maintenance:
+        dry = run_retention(maintenance, RetentionPlan(name, days=1))
+        assert (dry["eligible"], dry["deleted"]) == (2, 0)
+        with closing(connect()) as leader, leader, leader.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_lock(%s)", (RETENTION_LOCK,))
+            with pytest.raises(RetentionRefused, match="Another retention run"):
+                run_retention(maintenance, plan, enabled=True)
+        with closing(connect()) as locked, locked, locked.cursor() as cursor:
+            cursor.execute("SELECT id FROM monitoring_history WHERE id=%s FOR UPDATE", (oldest,))
+            def interrupt(_):
+                raise KeyboardInterrupt
+            with pytest.raises(KeyboardInterrupt):
+                run_retention(maintenance, plan, enabled=True, pause=interrupt)
+            assert run_retention(maintenance, RetentionPlan(name, days=1))["eligible"] == 1
+        resumed = run_retention(maintenance, plan, enabled=True, pause=lambda _: None)
+        assert resumed["deleted"] == resumed["batches"] == 1
+        assert run_retention(maintenance, RetentionPlan(name, days=1))["eligible"] == 0
+    with Session(engine) as db:
+        for model, count in [(User, 2), (APIEndpoint, 2), (Incident, 1), (IncidentNotification, 1),
+                             (RevokedToken, 1), (RateLimitCounter, 1), (MonitoringHistory, 4)]:
+            assert db.scalar(select(func.count()).select_from(model)) == count
+        analytics = endpoint_report(db, db.get(APIEndpoint, endpoint_id), Window.from_range("7d"))
+        assert analytics["uptime"] == 50 and analytics["latency"]["average"] == 40
+        assert analytics["availability"]["monitoring_errors"] == 1
+        user = db.get(User, owner_id)
+        assert len(get_recent_activity(db, user)) == 3
+        dashboard = get_dashboard_summary(db, user)
+        assert dashboard["total_endpoints"] == 1 and dashboard["uptime_percentage"] == 50
+        assert dashboard["average_response_time"] == 40

@@ -1,0 +1,149 @@
+name: TraceGrid CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tracegrid-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Python 3.12 / PostgreSQL 17)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: tracegrid_ci
+          POSTGRES_USER: tracegrid_ci
+          POSTGRES_PASSWORD: tracegrid-ci-disposable-container-only
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1 -U tracegrid_ci -d tracegrid_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install backend dependencies
+        id: dependencies
+        run: |
+          python -m venv "$RUNNER_TEMP/tracegrid-backend"
+          backend="$RUNNER_TEMP/tracegrid-backend/bin/python"
+          "$backend" -m pip install --upgrade pip==26.3
+          "$backend" -m pip install -r requirements.txt
+          "$backend" -m pip check
+      - name: Migrate fresh database and run pytest
+        env:
+          CI_POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+          TRACEGRID_CI_POSTGRES_PORT: ${{ job.services.postgres.ports['5432'] }}
+          TRACEGRID_CI_POSTGRES_PASSWORD: tracegrid-ci-disposable-container-only
+          EMAIL_DELIVERY: outbox
+          MONITORING_RETENTION_ENABLED: 'false'
+        run: |
+          echo "::add-mask::$TRACEGRID_CI_POSTGRES_PASSWORD"
+          docker exec "$CI_POSTGRES_CONTAINER" psql -X -w -v ON_ERROR_STOP=1 \
+            -U tracegrid_ci -d tracegrid_ci \
+            -c "COMMENT ON DATABASE tracegrid_ci IS 'TraceGrid disposable CI database'"
+          backend="$RUNNER_TEMP/tracegrid-backend/bin/python"
+          export PYTHONPATH="$GITHUB_WORKSPACE"
+          cd "$RUNNER_TEMP"
+          DATABASE_URL="postgresql+psycopg2://tracegrid_ci:${TRACEGRID_CI_POSTGRES_PASSWORD}@127.0.0.1:${TRACEGRID_CI_POSTGRES_PORT}/tracegrid_ci" \
+            "$backend" -m alembic -c "$GITHUB_WORKSPACE/alembic.ini" upgrade head
+
+          SECRET_KEY="$("$backend" -c 'import secrets; print(secrets.token_hex(32))')"
+          export SECRET_KEY
+          echo "::add-mask::$SECRET_KEY"
+          export EMAIL_OUTBOX_DIR="$RUNNER_TEMP/tracegrid-outbox"
+          DATABASE_URL="sqlite://" "$backend" -m pytest -q --tb=short --assert=plain \
+            --show-capture=no "$GITHUB_WORKSPACE/tests"
+      - name: Audit installed Python dependencies
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: |
+          backend="$RUNNER_TEMP/tracegrid-backend/bin/python"
+          packages="$("$backend" -c 'import sysconfig; print(sysconfig.get_path("purelib"))')"
+          python -m venv "$RUNNER_TEMP/tracegrid-audit"
+          audit="$RUNNER_TEMP/tracegrid-audit/bin/python"
+          "$audit" -m pip install pip-audit==2.10.1
+          "$audit" -m pip_audit --strict --progress-spinner off --path "$packages"
+
+  frontend:
+    name: Frontend (Node.js 24)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        id: dependencies
+        run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npm run lint
+      - name: Build production bundle
+        env:
+          VITE_API_BASE_URL: http://127.0.0.1:8000
+        run: npm run build
+      - name: Audit runtime dependencies
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npm audit --omit=dev --audit-level=moderate
+      - name: Audit the full lockfile including development tools
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: npm audit --audit-level=high
+
+  repository:
+    name: Repository safety
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check tracked files and ignore rules
+        run: python3 scripts/ci/check_tracked_paths.py
+      - name: Validate workflow syntax and GitHub Actions expressions
+        run: |
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 -o "$archive" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+      - name: Scan reachable Git history for secrets with redacted output
+        run: |
+          archive="$RUNNER_TEMP/gitleaks.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 -o "$archive" \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $archive" | sha256sum --check --status
+          tar -xzf "$archive" -C "$RUNNER_TEMP" gitleaks
+          printf '[extend]\nuseDefault = true\n' > "$RUNNER_TEMP/tracegrid-gitleaks.toml"
+          touch "$RUNNER_TEMP/tracegrid-gitleaksignore"
+          "$RUNNER_TEMP/gitleaks" git --config "$RUNNER_TEMP/tracegrid-gitleaks.toml" \
+            --gitleaks-ignore-path "$RUNNER_TEMP/tracegrid-gitleaksignore" \
+            --log-opts=HEAD --ignore-gitleaks-allow --redact=100 --no-banner --no-color .

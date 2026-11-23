@@ -1,19 +1,51 @@
 
 import socket
+import os
 from email import policy
 from email.parser import BytesParser
 import re
 
 import pytest
-from sqlalchemy import create_engine
+from alembic.migration import MigrationContext
+from sqlalchemy import URL, create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
 
-from app.database import Base, get_db
+from app.database import Base, get_db, initialize_schema
 from app.main import app
 from app.config import settings
+
+
+@pytest.fixture(scope="session")
+def ci_postgres():
+    port = os.environ.get("TRACEGRID_CI_POSTGRES_PORT")
+    if port is None:
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            pytest.fail("The disposable PostgreSQL service must be configured in CI")
+        pytest.skip("The disposable PostgreSQL CI service is not configured")
+
+    assert port.isascii() and port.isdecimal() and 1024 <= int(port) <= 65535 and int(port) != 5432
+    password = os.environ["TRACEGRID_CI_POSTGRES_PASSWORD"]
+    engine = create_engine(
+        URL.create("postgresql+psycopg2", username="tracegrid_ci", password=password,
+                   host="127.0.0.1", port=int(port), database="tracegrid_ci"),
+        hide_parameters=True, connect_args={"connect_timeout": 5},
+    )
+    try:
+        with engine.connect() as connection:
+            identity = connection.exec_driver_sql("""
+                SELECT current_database(), current_user, current_setting('server_version_num')::int / 10000,
+                       shobj_description(oid, 'pg_database')
+                FROM pg_database WHERE datname = current_database()
+            """).one()
+            assert identity == ("tracegrid_ci", "tracegrid_ci", 17, "TraceGrid disposable CI database")
+            assert MigrationContext.configure(connection).get_current_revision() == "20261123_06"
+        initialize_schema(engine)
+        yield engine
+    finally:
+        engine.dispose()
 
 
 def email_tokens(email, page):

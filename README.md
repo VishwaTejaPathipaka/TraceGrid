@@ -213,15 +213,80 @@ Use the same `SCHEDULED_PROBE_WORKERS` value on all API workers. Budget one data
 
 ## Running Tests
 
-From the project root:
+With the backend dependencies installed, the fast suite can run against in-memory SQLite with a temporary outbox. Use Bash and run these commands from the repository root.
 
 ```bash
-python -m pytest -v
+repo="$PWD"
+scratch="$(mktemp -d)"
+(
+  cd "$scratch"
+  export PYTHONPATH="$repo" DATABASE_URL=sqlite://
+  export SECRET_KEY="$(python -c 'import secrets; print(secrets.token_hex(32))')"
+  export EMAIL_DELIVERY=outbox EMAIL_OUTBOX_DIR="$scratch/outbox"
+  export MONITORING_RETENTION_ENABLED=false
+  python -m pytest -q "$repo/tests"
+)
 ```
+
+The PostgreSQL integration cases are opt-in locally. To run them with the same settings as CI, start a fresh PostgreSQL 17 container with a disposable database and role both named `tracegrid_ci`. Set `TRACEGRID_CI_POSTGRES_PASSWORD` to the synthetic password used to initialize that container. Publish its port 5432 to a random loopback port and export that number as `TRACEGRID_CI_POSTGRES_PORT`. The tests reject port 5432 and require a database marker before writing.
+
+```bash
+export TRACEGRID_CI_POSTGRES_PASSWORD="$(python -c 'import secrets; print(secrets.token_hex(20))')"
+export POSTGRES_PASSWORD="$TRACEGRID_CI_POSTGRES_PASSWORD"
+container="$(docker run --rm -d -p 127.0.0.1::5432 -e POSTGRES_PASSWORD \
+  -e POSTGRES_USER=tracegrid_ci -e POSTGRES_DB=tracegrid_ci postgres:17)"
+unset POSTGRES_PASSWORD
+for attempt in {1..30}; do
+  docker exec "$container" pg_isready -q -h 127.0.0.1 -U tracegrid_ci -d tracegrid_ci && break
+  sleep 1
+done
+export TRACEGRID_CI_POSTGRES_PORT="$(docker port "$container" 5432/tcp | cut -d: -f2)"
+docker exec "$container" psql -X -w -v ON_ERROR_STOP=1 -U tracegrid_ci -d tracegrid_ci \
+  -c "COMMENT ON DATABASE tracegrid_ci IS 'TraceGrid disposable CI database'"
+DATABASE_URL="postgresql+psycopg2://tracegrid_ci:${TRACEGRID_CI_POSTGRES_PASSWORD}@127.0.0.1:${TRACEGRID_CI_POSTGRES_PORT}/tracegrid_ci" \
+  python -m alembic upgrade head
+```
+
+Run the earlier pytest block with both `TRACEGRID_CI_POSTGRES_*` variables exported. Retire the disposable database when the tests finish.
+
+```bash
+docker stop "$container"
+unset TRACEGRID_CI_POSTGRES_PORT TRACEGRID_CI_POSTGRES_PASSWORD
+```
+
+Run the frontend checks with Node.js 24.
+
+```bash
+cd frontend
+npm ci --no-audit --no-fund
+npm test
+npm run lint
+VITE_API_BASE_URL=http://127.0.0.1:8000 npm run build
+npm audit --omit=dev --audit-level=moderate
+npm audit --audit-level=high
+```
+
+## Continuous Integration
+
+[TraceGrid CI](.github/workflows/ci.yml) runs on pushes to `main`, pull requests targeting `main`, and manual dispatch by maintainers. A newer run supersedes older runs for the same branch or pull request. Three independent jobs run on GitHub-hosted Ubuntu runners.
+
+| Check | What it verifies |
+| --- | --- |
+| Backend (Python 3.12 / PostgreSQL 17) | Installs `requirements.txt`, migrates a fresh PostgreSQL database through `20261123_06`, and runs pytest. The fast suite covers account security, ownership, monitoring, WebSockets, incidents, notifications, analytics, and network safeguards. PostgreSQL cases verify the migrated schema, a synthetic legacy upgrade, account requests, shared rate limits, scheduler locks, and retention. |
+| Frontend (Node.js 24) | Installs the lockfile with `npm ci`, runs Node tests and ESLint, builds the Vite production bundle, and audits npm dependencies. |
+| Repository safety | Checks tracked paths and Git ignore rules with `python scripts/ci/check_tracked_paths.py`, validates workflows with `actionlint`, and scans the Git history reachable from the tested commit with Gitleaks. Scanner output is redacted. |
+
+Open the failing job to locate the first failed step. Migration failures should be reproduced on a fresh PostgreSQL 17 container. The backend job also audits the installed Python environment, including its test dependencies, with PyPA `pip-audit` in strict mode. To run the same check locally, use an isolated Python 3.12 virtual environment with `pip==26.3` and install `requirements.txt`. Install `pip-audit==2.10.1` in a second environment and run `pip-audit --strict --progress-spinner off --path <backend-site-packages>`.
+
+The npm runtime audit blocks moderate and higher findings. The full lockfile audit reports every advisory and blocks high and critical findings. The lockfile currently includes the moderate [minimatch advisory GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) through ESLint. It affects development lint tooling. The patched minimatch major is outside the current tooling ranges, so CI reports it pending a compatible upstream update. Review advisory-service failures and rerun transient failures before merging.
+
+The workflow grants read-only repository access and uses ordinary `pull_request` events. The database, signing key and outbox are disposable. The jobs use synthetic configuration, leave retention disabled, and publish no application artifacts. Deployment is a separate release activity and requires an explicit production configuration, migration rehearsal, and rollback plan.
+
+To protect `main`, require pull requests and passing results from **Backend (Python 3.12 / PostgreSQL 17)**, **Frontend (Node.js 24)**, and **Repository safety**. Require the branch to be up to date before merging and require a review for workflow changes.
 
 ## Project Status
 
-The core application features are implemented and tested. The backend automated test suite currently contains 16 passing tests.
+TraceGrid includes scheduled monitoring, account management, incidents, analytics and retention controls.
 
 ## Author
 
