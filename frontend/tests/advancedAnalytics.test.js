@@ -55,6 +55,9 @@ test('renders accessible chart controls, no-data states, and the five-sample Ove
       points: samples, statistics: { samples: 4, p95: null, maximum: 350 }, window, gap: 75,
     })
     assert.match(trend, /type="range"/)
+    const readoutId = trend.match(/aria-describedby="([^"]+)"/)?.[1]
+    assert.ok(readoutId)
+    assert.ok(trend.includes(`id="${readoutId}" class="analytics-readout mono"`))
     assert.equal((trend.match(/<polyline/g) ?? []).length, 1)
     assert.match(render(charts.ResponseTrend, { points: [] }), /No measured response times/)
     const timeline = render(charts.AvailabilityTimeline, {

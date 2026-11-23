@@ -7,6 +7,7 @@
   --paper: #f5f5f2;
   --surface: #fff;
   --line: #deded8;
+  --field-border: #888880;
   --error: #a32626;
   --error-surface: #fcf1f0;
   color: var(--ink);

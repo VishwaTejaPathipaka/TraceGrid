@@ -283,12 +283,17 @@ function Endpoints() {
                         {pending?.id === endpoint.id && pending.action === 'check' ? 'Checking…' : 'Check now'}
                       </button>
                       <details className="action-menu">
-                        <summary className="button small" aria-label={`Actions for ${endpoint.name}`}>More <span aria-hidden="true">⌄</span></summary>
+                        <summary className="button small" aria-label={`More actions for ${endpoint.name}`}>More <span aria-hidden="true">⌄</span></summary>
                         <div className="action-popover">
                           <Link to={endpointLink(endpoint.id, 'history')} onClick={(e) => e.currentTarget.closest('details').open = false}>View history</Link>
                           <Link to={endpointLink(endpoint.id, 'analytics')} onClick={(e) => e.currentTarget.closest('details').open = false}>View analytics</Link>
                           <button disabled={saving} onClick={(e) => { e.currentTarget.closest('details').open = false; changeEditor(endpoint) }}>Edit endpoint</button>
-                          <button className="error-text" disabled={!!pending} onClick={(e) => { e.currentTarget.closest('details').open = false; runAction(endpoint, 'delete') }}>Delete endpoint</button>
+                          <button className="error-text" disabled={!!pending} onClick={(e) => {
+                            const menu = e.currentTarget.closest('details')
+                            menu.querySelector('summary').focus()
+                            menu.open = false
+                            runAction(endpoint, 'delete')
+                          }}>Delete endpoint</button>
                         </div>
                       </details>
                     </div>

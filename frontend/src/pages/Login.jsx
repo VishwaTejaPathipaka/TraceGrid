@@ -58,6 +58,7 @@ function Login() {
           <button
             type="button"
             className="password-toggle"
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
             onClick={() => setShowPassword(!showPassword)}
           >
             {showPassword ? 'Hide' : 'Show'}

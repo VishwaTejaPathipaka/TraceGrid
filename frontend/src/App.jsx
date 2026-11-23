@@ -104,15 +104,22 @@ function MainLayout() {
   )
 }
 
+function TitledPage({ title, children }) {
+  useEffect(() => {
+    document.title = `TraceGrid — ${title}`
+  }, [title])
+  return children
+}
+
 function App() {
   return (
     <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route path="/forgot-password" element={<AccountEmail key="forgot" action="forgot-password" />} />
-      <Route path="/reset-password" element={<AccountEmail key="reset" action="reset-password" />} />
-      <Route path="/verify-email" element={<AccountEmail key="verify" action="verify-email" />} />
-      <Route path="/resend-verification" element={<AccountEmail key="resend" action="resend-verification" />} />
+      <Route path="/login" element={<TitledPage title="Login"><Login /></TitledPage>} />
+      <Route path="/register" element={<TitledPage title="Register"><Register /></TitledPage>} />
+      <Route path="/forgot-password" element={<TitledPage title="Forgot password"><AccountEmail key="forgot" action="forgot-password" /></TitledPage>} />
+      <Route path="/reset-password" element={<TitledPage title="Reset password"><AccountEmail key="reset" action="reset-password" /></TitledPage>} />
+      <Route path="/verify-email" element={<TitledPage title="Verify email"><AccountEmail key="verify" action="verify-email" /></TitledPage>} />
+      <Route path="/resend-verification" element={<TitledPage title="Resend verification"><AccountEmail key="resend" action="resend-verification" /></TitledPage>} />
 
       <Route
         element={
@@ -121,11 +128,11 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/endpoints" element={<Endpoints />} />
-        <Route path="/incidents" element={<Incidents />} />
-        <Route path="/analytics" element={<Analytics />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/dashboard" element={<TitledPage title="Overview"><Dashboard /></TitledPage>} />
+        <Route path="/endpoints" element={<TitledPage title="Endpoints"><Endpoints /></TitledPage>} />
+        <Route path="/incidents" element={<TitledPage title="Incidents"><Incidents /></TitledPage>} />
+        <Route path="/analytics" element={<TitledPage title="Analytics"><Analytics /></TitledPage>} />
+        <Route path="/settings" element={<TitledPage title="Settings"><Settings /></TitledPage>} />
       </Route>
 
       <Route path="/" element={<Navigate to="/dashboard" replace />} />

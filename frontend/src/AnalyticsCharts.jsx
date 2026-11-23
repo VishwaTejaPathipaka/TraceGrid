@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { getAnalyticsChecks } from './api'
 import {
@@ -26,6 +26,7 @@ function ChartTitle({ title, detail }) {
 
 export function ResponseTrend({ points, statistics, window, gap }) {
   const [selected, setSelected] = useState(null)
+  const readoutId = useId()
   if (!points.length) return <section className="surface analytics-panel">
     <ChartTitle title="Response-time trend" /><EmptyState title="No measured response times">Monitoring errors are excluded from latency.</EmptyState>
   </section>
@@ -69,10 +70,10 @@ export function ResponseTrend({ points, statistics, window, gap }) {
       </div>
       <label className="latency-scrubber">Inspect plotted check
         <input type="range" min="0" max={maxPointCount - 1} value={index >= 0 ? index : maxPointCount - 1}
-          disabled={maxPointCount === 1} aria-valuetext={sampleDescription(current)}
+          disabled={maxPointCount === 1} aria-valuetext={sampleDescription(current)} aria-describedby={readoutId}
           onChange={(event) => setSelected(samples[Number(event.target.value)].id)} />
       </label>
-      <p className="analytics-readout mono">{sampleDescription(current)}</p>
+      <p id={readoutId} className="analytics-readout mono">{sampleDescription(current)}</p>
       <p className="analytics-caption">Lines join successful checks only and break at failures, monitoring errors, or gaps over {gap} seconds.
         {hasFailure && ' × marks unsuccessful checks.'}{hasSpikeLevel && ' Outlined points are successful checks at or above the window p95 and above the median.'}
         {statistics.samples > points.length && ` Showing ${count(points.length)} representative checks, including bucket extrema.`}

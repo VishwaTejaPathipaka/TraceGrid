@@ -120,7 +120,7 @@
 .editor-form label { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
 .editor-form .full-width { grid-column: 1 / -1; }
 .editor-form .notice { margin: 0; }
-.editor-form input, .editor-form select { height: 42px; width: 100%; padding: 8px 10px; background: white; border: 1px solid #bfbfb8; border-radius: 2px; font-weight: 400; }
+.editor-form input, .editor-form select { height: 42px; width: 100%; padding: 8px 10px; background: white; border: 1px solid var(--field-border); border-radius: 2px; font-weight: 400; }
 .endpoint-list ul { list-style: none; padding: 0; }
 .directory-labels, .endpoint-row { display: grid; grid-template-columns: minmax(190px, 2fr) minmax(100px, 1fr) minmax(102px, .82fr) minmax(64px, .55fr) auto; gap: 14px; align-items: center; padding: 12px 20px; }
 .directory-labels { border-top: 1px solid var(--line); background: #f3f3ef; font-size: 11px; color: var(--muted); }
@@ -200,7 +200,7 @@
 .incident-status.incident-active { color: var(--error); --tone: var(--error); }
 .incident-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; padding: 0 20px 18px; }
 .incident-filters label { display: grid; gap: 6px; font-size: 12px; font-weight: 650; min-width: 0; }
-.incident-filters select, .incident-filters input { min-height: 38px; max-width: 100%; border: 1px solid #bfbfb8; border-radius: 2px; background: white; padding: 7px; font-weight: 400; }
+.incident-filters select, .incident-filters input { min-height: 38px; max-width: 100%; border: 1px solid var(--field-border); border-radius: 2px; background: white; padding: 7px; font-weight: 400; }
 .incident-item { border-top: 1px solid var(--line); }
 .incident-item summary { display: grid; grid-template-columns: minmax(160px, 2fr) minmax(120px, .95fr) minmax(130px, 1fr) minmax(65px, .5fr) auto; gap: 12px; align-items: center; list-style: none; padding: 15px 20px; cursor: pointer; }
 .incident-item summary:hover, .incident-item[open] summary { background: #f4f4f0; }
@@ -249,7 +249,7 @@
 .range-control, .analytics-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .range-control .button[aria-pressed="true"] { background: var(--ink); color: white; border-color: var(--ink); }
 .analytics-filter-row label, .analytics-controls label { display: grid; gap: 4px; font-size: 12px; font-weight: 650; min-width: 0; }
-.analytics-filter-row select, .analytics-controls select { min-height: 34px; border: 1px solid #bfbfb8; border-radius: 2px; background: white; padding: 5px 7px; max-width: min(100%, 350px); }
+.analytics-filter-row select, .analytics-controls select { min-height: 34px; border: 1px solid var(--field-border); border-radius: 2px; background: white; padding: 5px 7px; max-width: min(100%, 350px); }
 .analytics-filter-row label { flex: 0 1 auto; }
 .analytics-window { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
 .analytics-track { display: grid; gap: 12px; min-width: 0; }
