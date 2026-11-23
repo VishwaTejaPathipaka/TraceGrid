@@ -7,7 +7,7 @@ class AnalyticsResponse(BaseModel):
     successful_checks: int
     failed_checks: int
     average_response_time: float
-    uptime_percentage: float
+    uptime_percentage: float | None
     
     
 class DashboardSummary(BaseModel):
@@ -17,4 +17,5 @@ class DashboardSummary(BaseModel):
     successful_checks: int
     failed_checks: int
     average_response_time: float
-    uptime_percentage: float
+    latency_samples: int
+    uptime_percentage: float | None

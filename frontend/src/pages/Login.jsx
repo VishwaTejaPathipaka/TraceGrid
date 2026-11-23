@@ -1,8 +1,8 @@
 
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { loginUser } from '../api'
-import './Login.css'
+import AuthFrame from './AuthFrame'
 
 function Login() {
   const [username, setUsername] = useState('')
@@ -31,68 +31,60 @@ function Login() {
   }
 
   return (
-    <main className="login-page">
-      <section className="login-panel">
-        <div className="login-brand">
-          <span className="login-brand-mark">T</span>
-          <span>TraceGrid</span>
-        </div>
+    <AuthFrame title="Sign in" description="Access your monitoring workspace.">
+      <form onSubmit={handleLogin}>
+        <label htmlFor="username">Username</label>
+        <input
+          id="username"
+          autoComplete="username"
+          type="text"
+          placeholder="Enter your username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+          required
+        />
 
-        <div className="login-heading">
-          <h1>Welcome back</h1>
-          <p>Sign in to access your monitoring workspace.</p>
-        </div>
-
-        <form onSubmit={handleLogin}>
-          <label htmlFor="username">Username</label>
+        <label htmlFor="password">Password</label>
+        <div className="password-field">
           <input
-            id="username"
-            type="text"
-            placeholder="Enter your username"
-            value={username}
-            onChange={(event) => setUsername(event.target.value)}
+            id="password"
+            autoComplete="current-password"
+            type={showPassword ? 'text' : 'password'}
+            placeholder="Enter your password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
             required
           />
-
-          <label htmlFor="password">Password</label>
-          <div className="password-field">
-            <input
-              id="password"
-              type={showPassword ? 'text' : 'password'}
-              placeholder="Enter your password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-            />
-            <button
-              type="button"
-              className="password-toggle"
-              onClick={() => setShowPassword(!showPassword)}
-            >
-              {showPassword ? 'Hide' : 'Show'}
-            </button>
-          </div>
-
-          {error && <p className="login-error">{error}</p>}
-
           <button
-            type="submit"
-            className="login-submit"
-            disabled={loading}
+            type="button"
+            className="password-toggle"
+            onClick={() => setShowPassword(!showPassword)}
           >
-            {loading ? 'Signing in...' : 'Sign in'}
+            {showPassword ? 'Hide' : 'Show'}
           </button>
-        </form>
+        </div>
 
-        <p className="login-footer">
-          Don't have an account? <a href="/register">Create account</a>
-        </p>
+        {error && <p role="alert" className="login-error">{error}</p>}
 
-        <p className="login-footer">
-          TraceGrid · API Monitoring Platform
-        </p>
-      </section>
-    </main>
+        <button
+          type="submit"
+          className="login-submit"
+          disabled={loading}
+        >
+          {loading ? 'Signing in...' : 'Sign in'}
+        </button>
+      </form>
+
+      <p className="login-footer">
+        <Link to="/forgot-password">Forgot password?</Link>
+        {' · '}
+        <Link to="/resend-verification">Resend verification</Link>
+      </p>
+
+      <p className="login-footer">
+        Don't have an account? <Link to="/register">Create account</Link>
+      </p>
+    </AuthFrame>
   )
 }
 

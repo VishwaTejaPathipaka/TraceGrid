@@ -4,11 +4,11 @@ TraceGrid is a web-based API monitoring platform built to check API availability
 
 ## Features
 
-- User registration and login
+- User registration, email verification, sign-in, and password recovery
 - JWT-based authentication
 - Add, edit, and delete API endpoints
 - Manual API health checks
-- Automatic API monitoring at 60-second intervals
+- Durable automatic API monitoring with a 30-second target interval
 - UP/DOWN status detection
 - HTTP status code tracking
 - API response-time measurement
@@ -66,6 +66,8 @@ TraceGrid/
 
 ## Installation and Setup
 
+Use the registration form to request a verification link, then open the message and enter your account password on the verification page. Sign-in links to **Forgot password?** and **Resend verification**. For local testing, open the messages in the backend's `.tracegrid-mail/` outbox. The backend documentation covers the database migration and production email settings.
+
 ### 1. Clone the repository
 
 ```bash
@@ -93,7 +95,7 @@ Create a PostgreSQL database and configure the database connection in your envir
 ### 5. Start the backend
 
 ```bash
-python -m uvicorn app.main:app --reload
+python -m app.serve --reload
 ```
 
 Backend: http://127.0.0.1:8000
@@ -114,7 +116,7 @@ Frontend: http://localhost:5173
 
 ## Monitoring Process
 
-TraceGrid uses APScheduler to run automatic monitoring every 60 seconds.
+TraceGrid uses APScheduler to dispatch due checks from PostgreSQL. The endpoint table shows upcoming and overdue checks and the last probe timing.
 
 For each active endpoint, the system:
 1. Sends an HTTP request.

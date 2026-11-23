@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
+from sqlalchemy import BigInteger, Column, Integer, String, Boolean, DateTime, ForeignKey, Index, text
 from sqlalchemy.sql import func
 
 from app.database import Base
@@ -15,3 +15,18 @@ class APIEndpoint(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    configuration_error = Column(String(255), nullable=True)
+    configuration_revision = Column(Integer, nullable=False, server_default="0")
+    next_check_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    scheduled_claim_id = Column(String(32), nullable=True)
+    scheduled_lease_until = Column(DateTime(timezone=True), nullable=True)
+    last_schedule_lateness_ms = Column(BigInteger, nullable=True)
+    last_schedule_duration_ms = Column(Integer, nullable=True)
+    last_schedule_missed_intervals = Column(Integer, nullable=True)
+    incident_failure_count = Column(Integer, nullable=False, server_default="0")
+    incident_failure_since = Column(DateTime(timezone=True))
+
+    __table_args__ = (
+        Index("ix_api_endpoints_active_due", "next_check_at", "id",
+              postgresql_where=text("is_active IS TRUE"), sqlite_where=text("is_active IS TRUE")),
+    )

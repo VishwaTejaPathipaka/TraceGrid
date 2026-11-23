@@ -1,8 +1,8 @@
 
 import { useState } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { registerUser } from '../api'
-import './Login.css'
+import AuthFrame from './AuthFrame'
 
 function Register() {
   const [username, setUsername] = useState('')
@@ -11,7 +11,7 @@ function Register() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const navigate = useNavigate()
+  const [message, setMessage] = useState('')
 
   async function handleRegister(event) {
     event.preventDefault()
@@ -19,8 +19,9 @@ function Register() {
     setLoading(true)
 
     try {
-      await registerUser(username, email, password)
-      navigate('/')
+      const result = await registerUser(username, email, password)
+      setPassword('')
+      setMessage(result.message)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -29,58 +30,57 @@ function Register() {
   }
 
   return (
-    <main className="login-page">
-      <section className="login-panel">
-        <div className="login-brand">
-          <span className="login-brand-mark">T</span>
-          <span>TraceGrid</span>
-        </div>
+    <AuthFrame title="Create account" description="Set up your TraceGrid workspace.">
+      {message ? <p className="notice" role="status">{message}</p> : <form onSubmit={handleRegister}>
+        <label htmlFor="register-username">Username</label>
+        <input
+          id="register-username"
+          type="text"
+          autoComplete="username"
+          maxLength={50}
+          placeholder="Enter username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          required
+        />
 
-        <div className="login-heading">
-          <h1>Create account</h1>
-          <p>Register to access your monitoring workspace.</p>
-        </div>
+        <label htmlFor="register-email">Email</label>
+        <input
+          id="register-email"
+          type="email"
+          autoComplete="email"
+          maxLength={100}
+          placeholder="Enter email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+        />
 
-        <form onSubmit={handleRegister}>
-          <label>Username</label>
-          <input
-            type="text"
-            placeholder="Enter username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-          />
+        <label htmlFor="register-password">Password (12–128 characters)</label>
+        <input
+          id="register-password"
+          type="password"
+          autoComplete="new-password"
+          minLength={12}
+          maxLength={128}
+          placeholder="Create password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
 
-          <label>Email</label>
-          <input
-            type="email"
-            placeholder="Enter email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
+        {error && <p role="alert" className="login-error">{error}</p>}
 
-          <label>Password</label>
-          <input
-            type="password"
-            placeholder="Create password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+        <button className="login-submit" type="submit" disabled={loading}>
+          {loading ? 'Creating account...' : 'Create account'}
+        </button>
+      </form>}
 
-          {error && <p className="login-error">{error}</p>}
-
-          <button className="login-submit" type="submit" disabled={loading}>
-            {loading ? 'Creating account...' : 'Create account'}
-          </button>
-        </form>
-
-        <p className="login-footer">
-          Already have an account? <Link to="/">Sign in</Link>
-        </p>
-      </section>
-    </main>
+      <p className="login-footer">
+        <Link to="/login">Sign in</Link>
+        {message && <> {' · '} <Link to="/resend-verification">Resend verification</Link></>}
+      </p>
+    </AuthFrame>
   )
 }
 
