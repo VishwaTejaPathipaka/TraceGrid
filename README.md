@@ -167,6 +167,8 @@ Overview and analytics use available monitoring records. Removing older checks c
 
 For public deployment, terminate TLS at your ingress, serve the built frontend, and keep the API listener private to that ingress. Use `python -m app.serve` for the configured proxy and transport limits. Forwarded headers are ignored by default. Set `TRUSTED_PROXY_NETWORKS` only to the actual proxy addresses, and have proxies replace inbound forwarded headers. Use exact HTTPS `FRONTEND_ORIGINS`, a strong random JWT signing key, and `ENABLE_HSTS=true` only when HTTPS is in place. Set ingress body, header, connection, and request limits and enforce outbound network policy. Application SSRF validation is defense in depth alongside egress firewall restrictions to private networks and metadata services.
 
+Hosting must use an ongoing free tier that supports continuous 30-second monitoring and authenticated WebSockets. Provider selection is pending. See the [production-readiness plan](docs/production-readiness.md) and [backup and recovery runbook](docs/recovery.md) for qualification checks and the isolated rehearsal.
+
 ### Advanced analytics
 
 **Analytics** compares owned endpoints and summarizes incident activity. Select an endpoint for a time-based latency trend, availability timeline, and latency distribution. You can also open these views from an endpoint's **Analytics** tab. All views share 1-hour, 6-hour, 24-hour, and 7-day windows. Chart timestamps display in local time.
@@ -278,7 +280,7 @@ npm audit --audit-level=high
 
 Open the failing job to locate the first failed step. Migration failures should be reproduced on a fresh PostgreSQL 17 container. The backend job also audits the installed Python environment, including its test dependencies, with PyPA `pip-audit` in strict mode. To run the same check locally, use an isolated Python 3.12 virtual environment with `pip==26.3` and install `requirements.txt`. Install `pip-audit==2.10.1` in a second environment and run `pip-audit --strict --progress-spinner off --path <backend-site-packages>`.
 
-The npm runtime audit blocks moderate and higher findings. The full lockfile audit reports every advisory and blocks high and critical findings. The lockfile currently includes the moderate [minimatch advisory GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) through ESLint. It affects development lint tooling. The patched minimatch major is outside the current tooling ranges, so CI reports it pending a compatible upstream update. Review advisory-service failures and rerun transient failures before merging.
+The npm runtime audit blocks moderate and higher findings. The full lockfile audit reports every advisory and blocks high and critical findings. ESLint 10.15.0 and its compatible dependencies resolve the development-only [minimatch advisory GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) with minimatch 11.0.9. Review advisory-service failures and rerun transient failures before merging.
 
 The workflow grants read-only repository access and uses ordinary `pull_request` events. The database, signing key and outbox are disposable. The jobs use synthetic configuration, leave retention disabled, and publish no application artifacts. Deployment is a separate release activity and requires an explicit production configuration, migration rehearsal, and rollback plan.
 
